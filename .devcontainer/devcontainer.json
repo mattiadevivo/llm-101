@@ -1,0 +1,20 @@
+{
+  "name": "poetry",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "njpwerner.autodocstring",
+        "charliermarsh.ruff",
+        "ms-toolsai.jupyter"
+      ]
+    }
+  },
+  "mounts": [
+    "source=${localEnv:HOME}/.ssh/id_rsa,target=/home/vscode/.ssh/id_rsa,type=bind,readonly=true,consistency=cached",
+    "source=${localEnv:HOME}/.ssh/known_hosts,target=/home/vscode/.ssh/known_hosts,type=bind,readonly=true,consistency=cached"
+  ]
+}

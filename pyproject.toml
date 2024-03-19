@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "llm-101"
+version = "0.1.0"
+description = "A gentle introduction to LLMs"
+authors = ["Mattia De Vivo <mattia.devivo@igenius.ai>"]
+license = "ISC"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "~3.11"
+numpy = "1.24.1"
+regex = "2017.4.5"
+requests = "2.27.1"
+tqdm = "4.64.0"
+fire = "0.5.0"
+tensorflow = [
+    { version = '^2.11.0', markers = "sys_platform != 'darwin'"  }
+]
+tensorflow_macos = [
+    { version = '^2.11.0', markers = "sys_platform == 'darwin'" }
+]
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.27.1"
+jupyter = "^1.0.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
