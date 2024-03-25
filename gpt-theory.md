@@ -233,3 +233,111 @@ With GPT2 and GPT3 papers we realized that a GPT model pre-trained on enough dat
 Generating text given a prompt is also referred to as **conditional generation**, since our model is generating some output conditioned on some input.
 
 GPTs are not limited to NLP tasks. You can condition the model on anything you want. For example, you can turn a GPT into a chatbot (i.e. **ChatGPT**) by conditioning it on the conversation history. You can also further condition the chatbot to behave a certain way by prepending the prompt with some kind of description.
+
+## Architecture
+
+At a high level, the GPT architecture has three sections:
+
+- Text + positional embeddings
+- A transformer decoder stack
+- A projection to vocab step
+
+### Embeddings
+
+#### Token embeddings
+
+Token IDs by themselves are not very good representations for a neural network. For one, the relative magnitudes of the token IDs falsely communicate information (for example, if `Apple = 5` and `Table = 10` in our vocab, then we are implying that `2 * Table = Apple`). Secondly, a single number is not a lot of dimensionality for a neural network to work with.
+
+To address these limitations, we'll take advantage of **word vectors** (each word is represented by a vector of numbers), specifically via a learned embedding matrix:
+
+```
+wte[inputs] # [n_seq] -> [n_seq, n_embd]
+```
+
+`wte` is a `[n_vocab, n_embd]` matrix. It acts as a lookup table, where the `ith` row in the matrix corresponds to the learned vector for the `ith` token in our vocabulary. `wte[inputs]` uses integer array indexing to retrieve the vectors corresponding to each token in our input.
+
+Like any other parameter in our network, **wte** is learned. That is, it is randomly initialized at the start of training and then updated via gradient descent.
+
+#### Positon embedding
+
+Ordering of words is a crucial part of the language, so we need a way to make the output change depending on the input order, for this we can use another learning embedding matrix:
+```
+wpe[range(len(inputs))] # [n_seq] -> [n_seq, n_embd]
+```
+
+Recall, `wpe` is a `[n_ctx, n_embd]` matrix. The `ith` row of the matrix contains a vector that encodes information about the 
+`ith` position in the input. Similar to wte, this matrix is learned during gradient descent.
+
+Notice, this restricts our model to a maximum sequence length of `n_ctx`. That is, `len(inputs) <= n_ctx` must hold.
+
+#### Combined
+
+By combining the two embeddings above we get 
+```python
+# token + positional embeddings
+x = wte[inputs] + wpe[range(len(inputs))]  # [n_seq] -> [n_seq, n_embd]
+
+# x[i] represents the word embedding for the ith word + the positional
+# embedding for the ith position
+```
+
+## Decoding 
+This is where all the magic happens and the "deep" in deep learning comes in. We pass our embedding through a stack of `n_layer` transformer decoder blocks.
+
+```python
+# forward pass through n_layer transformer blocks
+for block in blocks:
+    x = transformer_block(x, **block, n_head=n_head)  # [n_seq, n_embd] -> [n_seq, n_embd]
+```
+
+Stacking more layers is what allows us to control how deep our network is. GPT-3 for example, has a whopping 96 layers.
+
+## Components
+
+### Encoder
+
+`encoder` is the BPE tokenizer used by GPT-2:
+```python
+ids = encoder.encode("Not all heroes wear capes.")
+ids
+# [3673, 477, 10281, 5806, 1451, 274, 13]
+```
+
+Using the vocabulary of the tokenizer (stored in encoder.decoder), we can take a peek at what the actual tokens look like:
+```python
+[encoder.decoder[i] for i in ids]
+# ['Not', 'Ġall', 'Ġheroes', 'Ġwear', 'Ġcap', 'es', '.']
+```
+
+Here notice that sometimes the decoder produces a word and sometimes is prepended by a **space characters** `Ġ`, other times are punctuation.
+
+One nice thing about BPE is that it can encode any arbitrary string. If it encounters something that is not present in the vocabulary, it just breaks it down into substrings it does understand:
+```python
+[encoder.decoder[i] for i in encoder.encode("zjqfl")]
+# ['z', 'j', 'q', 'fl']
+```
+
+Get the size of vocabulary:
+```python
+len(encoder.decoder)
+```
+
+The vocabulary, as well as the byte-pair merges which determines how strings are broken down, is obtained by training the tokenizer. When we load the tokenizer, we're loading the already trained vocab and byte-pair merges from some files, which were downloaded alongside the model files when we ran load_encoder_hparams_and_params. See `models/124M/encoder.json` (the vocabulary) and `models/124M/vocab.bpe` (byte-pair merges).
+
+### Hyperparameters
+
+`hparams` is a dictionary that contains the hyper-parameters of our model:
+```python
+# hparams
+{
+  "n_vocab": 50257, # number of tokens in our vocabulary
+  "n_ctx": 1024, # maximum possible sequence length of the input
+  "n_embd": 768, # embedding dimension (determines the "width" of the network)
+  "n_head": 12, # number of attention heads (n_embd must be divisible by n_head)
+  "n_layer": 12 # number of layers (determines the "depth" of the network)
+}
+```
+
+### Parameters
+
+`params`  is a nested json dictionary that hold the trained weights of our model. The leaf nodes of the json are NumPy arrays.
