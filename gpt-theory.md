@@ -292,6 +292,72 @@ for block in blocks:
 
 Stacking more layers is what allows us to control how deep our network is. GPT-3 for example, has a whopping 96 layers.
 
+### Projection to vocab
+
+In our final step, we project the output of the final transformer block to a probability distribution over our vocab:
+```python
+# projection to vocab
+x = layer_norm(x, **ln_f)  # [n_seq, n_embd] -> [n_seq, n_embd]
+return x @ wte.T  # [n_seq, n_embd] -> [n_seq, n_vocab]
+```
+
+Couple things to note here:
+
+1. We first pass x through a final layer normalization layer before doing the projection to vocab. This is specific to the GPT-2 architecture (this is not present in the original GPT and Transformer papers).
+2. We are reusing the embedding matrix wte for the projection. Other GPT implementations may choose to use a separate learned weight matrix for the projection, however sharing the embedding matrix has a couple of advantages:
+    - You save some parameters (although at GPT-3 scale, this is negligible).
+    - Since the matrix is both responsible for mapping both to words and from words, in theory, it may learn a richer representation compared to having two separate matrixes.
+3. We don't apply softmax at the end, so our outputs will be logits instead of probabilities between 0 and 1. This is done for several reasons:
+    - softmax is monotonic, so for greedy sampling `np.argmax(logits)` is equivalent to `np.argmax(softmax(logits))` making softmax redundant
+    - softmax is irreversible, meaning we can always go from logits to probabilities by applying softmax, but we can't go back to logits from probabilities, so for maximum flexibility, we output the logits
+    - Numerically stability (for example, to compute cross entropy loss, taking `log(softmax(logits))` is numerically unstable compared to `log_softmax(logits)`
+
+The projection to vocab step is also sometimes called the **language modeling head**. What does "head" mean? Once your GPT is pre-trained, you can swap out the language modeling head with some other kind of projection, like a classification head for fine-tuning the model on some classification task.
+
+### Decoder block
+
+The transformer decoder block consists of two sublayers:
+
+- Multi-head causal self attention
+- Position-wise feed forward neural network
+
+```python
+def transformer_block(x, mlp, attn, ln_1, ln_2, n_head):  # [n_seq, n_embd] -> [n_seq, n_embd]
+    # multi-head causal self attention
+    x = x + mha(layer_norm(x, **ln_1), **attn, n_head=n_head)  # [n_seq, n_embd] -> [n_seq, n_embd]
+
+    # position-wise feed forward network
+    x = x + ffn(layer_norm(x, **ln_2), **mlp)  # [n_seq, n_embd] -> [n_seq, n_embd]
+
+    return x
+```
+
+### Position-wise Feed Forward Network
+
+This is just a simple multi-layer **perceptron** with 2 layers:
+```python
+def ffn(x, c_fc, c_proj):  # [n_seq, n_embd] -> [n_seq, n_embd]
+    # project up
+    a = gelu(linear(x, **c_fc))  # [n_seq, n_embd] -> [n_seq, 4*n_embd]
+
+    # project back down
+    x = linear(a, **c_proj)  # [n_seq, 4*n_embd] -> [n_seq, n_embd]
+
+    return x
+```
+
+> A **perceptron** is a system (either hardware or software) that takes in one or more input values, runs a function on the weighted sum of the inputs, and computes a single output value. In machine learning, the function is typically nonlinear, such as ReLU, sigmoid, or tanh. 
+
+Nothing super fancy here, we just project from n_embd up to a higher dimension `4*n_embd` and then back down to `n_embd`.
+
+Recall, from our params dictionary, that our mlp params look like this:
+```python
+"mlp": {
+    "c_fc": {"b": [4*n_embd], "w": [n_embd, 4*n_embd]},
+    "c_proj": {"b": [n_embd], "w": [4*n_embd, n_embd]},
+}
+```
+
 ## Components
 
 ### Encoder

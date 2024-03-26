@@ -35,6 +35,9 @@ poetry install
 Tested on `Python 3.11.7`.
 
 #### Usage
+
+If you're on MacOS you MUST use devcontainer in order to run the project.
+
 ```bash
 python gpt2.py "Alan Turing theorized that computers would one day become"
 ```
